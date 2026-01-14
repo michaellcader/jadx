@@ -63,6 +63,12 @@ import jadx.gui.utils.JumpPosition;
 import jadx.gui.utils.NLS;
 import jadx.gui.utils.UiUtils;
 import jadx.gui.utils.ui.NodeLabel;
+import javax.swing.JMenuItem;
+import javax.swing.JPopupMenu;
+import javax.swing.JOptionPane;
+import java.util.prefs.Preferences;
+import java.util.Arrays;
+import java.util.stream.Collectors;
 
 import static javax.swing.ScrollPaneConstants.HORIZONTAL_SCROLLBAR_AS_NEEDED;
 import static javax.swing.ScrollPaneConstants.VERTICAL_SCROLLBAR_AS_NEEDED;
@@ -83,6 +89,12 @@ public abstract class CommonSearchDialog extends JFrame {
 	protected JLabel progressInfoLabel;
 	protected JLabel warnLabel;
 	protected ProgressPanel progressPane;
+	private final List<String> searchHistory = new ArrayList<>();
+    private final List<String> searchFavorites = new ArrayList<>();
+    private static final int MAX_HISTORY = 20;
+    private static final String PREF_KEY_HISTORY = "jadx_search_history";
+    private static final String PREF_KEY_FAVORITES = "jadx_search_favorites";
+    private final Preferences prefs = Preferences.userNodeForPackage(CommonSearchDialog.class);
 
 	private SearchContext highlightContext;
 
@@ -118,6 +130,9 @@ public abstract class CommonSearchDialog extends JFrame {
 
 	public void updateHighlightContext(String text, boolean caseSensitive, boolean regexp, boolean wholeWord) {
 		updateTitle(text);
+		if (text != null && !text.trim().isEmpty()) {
+            addToHistory(text);
+        }
 		highlightContext = new SearchContext(text);
 		highlightContext.setMatchCase(caseSensitive);
 		highlightContext.setWholeWord(wholeWord);
@@ -216,8 +231,10 @@ public abstract class CommonSearchDialog extends JFrame {
 
   
 
-	@NotNull
+@NotNull
 	protected JPanel initButtonsPanel() {
+		loadHistoryAndFavorites();
+
 		progressPane = new ProgressPanel(mainWindow, false);
 
 		JButton cancelButton = new JButton(NLS.str("search_dialog.cancel"));
@@ -227,9 +244,70 @@ public abstract class CommonSearchDialog extends JFrame {
 		getRootPane().setDefaultButton(openBtn);
 		JButton copyBtn = new JButton(NLS.str("search_dialog.copy"));
 		copyBtn.addActionListener(event -> copyAllSearchResults());
-			
-		JButton copyAllCodeBtn = new JButton("CopyCode"); 
+
+		JButton copyAllCodeBtn = new JButton("CopyCode");
 		copyAllCodeBtn.addActionListener(event -> copyAllCodeResults());
+
+		JButton historyBtn = new JButton("History");
+		historyBtn.addActionListener(e -> {
+			JPopupMenu menu = new JPopupMenu();
+			if (searchHistory.isEmpty()) {
+				JMenuItem item = new JMenuItem("No History");
+				item.setEnabled(false);
+				menu.add(item);
+			} else {
+				for (String s : searchHistory) {
+					JMenuItem item = new JMenuItem(s);
+					item.addActionListener(ev -> onHistorySelected(s));
+					menu.add(item);
+				}
+				menu.addSeparator();
+				JMenuItem clearItem = new JMenuItem("Clear History");
+				clearItem.addActionListener(ev -> {
+					searchHistory.clear();
+					saveHistory();
+				});
+				menu.add(clearItem);
+			}
+			menu.show(historyBtn, 0, historyBtn.getHeight());
+		});
+
+		JButton favBtn = new JButton("Favorites");
+		favBtn.addActionListener(e -> {
+			JPopupMenu menu = new JPopupMenu();
+			String currentSearch = highlightContext != null ? highlightContext.getSearchFor() : null;
+
+			JMenuItem addItem = new JMenuItem("Add Current Search");
+			addItem.setEnabled(currentSearch != null && !currentSearch.trim().isEmpty());
+			addItem.addActionListener(ev -> {
+				if (currentSearch != null && !searchFavorites.contains(currentSearch)) {
+					searchFavorites.add(currentSearch);
+					saveFavorites();
+				}
+			});
+			menu.add(addItem);
+			menu.addSeparator();
+
+			if (searchFavorites.isEmpty()) {
+				JMenuItem empty = new JMenuItem("No Favorites");
+				empty.setEnabled(false);
+				menu.add(empty);
+			} else {
+				for (String s : searchFavorites) {
+					JMenuItem item = new JMenuItem(s);
+					item.addActionListener(ev -> onHistorySelected(s));
+					menu.add(item);
+				}
+				menu.addSeparator();
+				JMenuItem clearFav = new JMenuItem("Clear Favorites");
+				clearFav.addActionListener(ev -> {
+					searchFavorites.clear();
+					saveFavorites();
+				});
+				menu.add(clearFav);
+			}
+			menu.show(favBtn, 0, favBtn.getHeight());
+		});
 		
 
 		JCheckBox cbKeepOpen = new JCheckBox(NLS.str("search_dialog.keep_open"));
@@ -243,10 +321,20 @@ public abstract class CommonSearchDialog extends JFrame {
 		buttonPane.add(Box.createRigidArea(new Dimension(15, 0)));
 		buttonPane.add(progressPane);
 		buttonPane.add(Box.createRigidArea(new Dimension(5, 0)));
+		
+		
 		buttonPane.add(Box.createHorizontalGlue());
+
+		
+		buttonPane.add(historyBtn);
+		buttonPane.add(Box.createRigidArea(new Dimension(10, 0)));
+		buttonPane.add(favBtn);
+		buttonPane.add(Box.createRigidArea(new Dimension(10, 0)));
+		
+
 		buttonPane.add(copyBtn);
 		buttonPane.add(Box.createRigidArea(new Dimension(10, 0)));
-			
+
 		buttonPane.add(copyAllCodeBtn);
 		buttonPane.add(Box.createRigidArea(new Dimension(10, 0)));
 
@@ -255,7 +343,6 @@ public abstract class CommonSearchDialog extends JFrame {
 		buttonPane.add(cancelButton);
 		return buttonPane;
 	}
-
 	protected JPanel initResultsTable() {
 		ResultsTableCellRenderer renderer = new ResultsTableCellRenderer();
 		resultsModel = new ResultsModel();
@@ -389,11 +476,10 @@ public abstract class CommonSearchDialog extends JFrame {
 			TableColumn firstColumn = columnModel.getColumn(0);
 			if (model.isAddDescColumn()) {
 				if (firstColumn.getWidth() > width * 0.8) {
-					// first column too big and hide second column, resize it
 					firstColumn.setPreferredWidth(width / 2);
 				}
 				TableColumn secondColumn = columnModel.getColumn(1);
-				int columnMaxWidth = width * 2; // set big enough size to skip per row check
+				int columnMaxWidth = width * 2; 
 				if (secondColumn.getWidth() < columnMaxWidth) {
 					secondColumn.setPreferredWidth(columnMaxWidth);
 				}
@@ -413,7 +499,6 @@ public abstract class CommonSearchDialog extends JFrame {
 
 		@Override
 		public int getScrollableUnitIncrement(Rectangle visibleRect, int orientation, int direction) {
-			// ResultsTable only has two wide columns, the default increment is way too fast
 			if (orientation == SwingConstants.HORIZONTAL) {
 				return 30;
 			}
@@ -569,4 +654,57 @@ public abstract class CommonSearchDialog extends JFrame {
 	protected JNodeCache getNodeCache() {
 		return mainWindow.getCacheObject().getNodeCache();
 	}
+	    protected void loadHistoryAndFavorites() {
+        String histStr = prefs.get(PREF_KEY_HISTORY, "");
+        if (!histStr.isEmpty()) {
+            searchHistory.addAll(Arrays.asList(histStr.split("\\|\\|")));
+        }
+        String favStr = prefs.get(PREF_KEY_FAVORITES, "");
+        if (!favStr.isEmpty()) {
+            searchFavorites.addAll(Arrays.asList(favStr.split("\\|\\|")));
+        }
+    }
+
+    private void saveHistory() {
+        prefs.put(PREF_KEY_HISTORY, String.join("||", searchHistory));
+    }
+
+    private void saveFavorites() {
+        prefs.put(PREF_KEY_FAVORITES, String.join("||", searchFavorites));
+    }
+
+    private void addToHistory(String text) {
+        if (text == null || text.trim().isEmpty()) return;
+        searchHistory.remove(text);
+        searchHistory.add(0, text);
+        if (searchHistory.size() > MAX_HISTORY) {
+            searchHistory.remove(searchHistory.size() - 1);
+        }
+        saveHistory();
+    }
+
+    protected void onHistorySelected(String text) {
+        boolean found = autoFillSearchField(this.getContentPane(), text);
+        
+        if (!found) {
+            UiUtils.copyToClipboard(text);
+        }
+    }
+	    private boolean autoFillSearchField(java.awt.Container container, String text) {
+        for (Component comp : container.getComponents()) {
+           
+            if (comp instanceof javax.swing.JTextField) {
+                ((javax.swing.JTextField) comp).setText(text);
+               
+                return true;
+            }
+           
+            if (comp instanceof java.awt.Container) {
+                if (autoFillSearchField((java.awt.Container) comp, text)) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
 }
