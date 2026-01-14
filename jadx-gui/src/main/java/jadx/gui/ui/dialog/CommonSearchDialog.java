@@ -196,6 +196,25 @@ public abstract class CommonSearchDialog extends JFrame {
 		}
 		UiUtils.copyToClipboard(sb.toString());
 	}
+	
+	    
+
+	protected void copyAllCodeResults() {
+		StringBuilder sb = new StringBuilder();
+		for (JNode node : resultsModel.rows) {
+	
+			if (node.hasDescString()) {
+
+				sb.append(node.makeDescString()).append("\n");
+			
+			}
+		}
+	
+		UiUtils.copyToClipboard(sb.toString());
+	}
+
+
+  
 
 	@NotNull
 	protected JPanel initButtonsPanel() {
@@ -208,6 +227,10 @@ public abstract class CommonSearchDialog extends JFrame {
 		getRootPane().setDefaultButton(openBtn);
 		JButton copyBtn = new JButton(NLS.str("search_dialog.copy"));
 		copyBtn.addActionListener(event -> copyAllSearchResults());
+			
+		JButton copyAllCodeBtn = new JButton("CopyCode"); 
+		copyAllCodeBtn.addActionListener(event -> copyAllCodeResults());
+		
 
 		JCheckBox cbKeepOpen = new JCheckBox(NLS.str("search_dialog.keep_open"));
 		cbKeepOpen.setSelected(mainWindow.getSettings().isKeepCommonDialogOpen());
@@ -223,6 +246,10 @@ public abstract class CommonSearchDialog extends JFrame {
 		buttonPane.add(Box.createHorizontalGlue());
 		buttonPane.add(copyBtn);
 		buttonPane.add(Box.createRigidArea(new Dimension(10, 0)));
+			
+		buttonPane.add(copyAllCodeBtn);
+		buttonPane.add(Box.createRigidArea(new Dimension(10, 0)));
+
 		buttonPane.add(openBtn);
 		buttonPane.add(Box.createRigidArea(new Dimension(10, 0)));
 		buttonPane.add(cancelButton);
