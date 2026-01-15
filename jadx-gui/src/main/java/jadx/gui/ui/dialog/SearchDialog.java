@@ -219,7 +219,13 @@ public class SearchDialog extends CommonSearchDialog {
 			case TEXT:
 				if (searchOptions.isEmpty()) {
 					searchOptions.add(SearchOptions.CODE);
-					searchOptions.add(IGNORE_CASE);
+			    searchOptions.add(SearchOptions.CLASS);    
+			    searchOptions.add(SearchOptions.METHOD);    
+			    searchOptions.add(SearchOptions.FIELD);     
+			    searchOptions.add(SearchOptions.RESOURCE);  
+			    searchOptions.add(SearchOptions.COMMENT);   		    
+			    searchOptions.add(SearchOptions.USE_REGEX); 
+					//searchOptions.add(IGNORE_CASE);
 				}
 				break;
 
