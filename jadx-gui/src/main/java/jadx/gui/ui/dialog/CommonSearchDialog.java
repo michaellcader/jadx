@@ -69,6 +69,10 @@ import javax.swing.JOptionPane;
 import java.util.prefs.Preferences;
 import java.util.Arrays;
 import java.util.stream.Collectors;
+import javax.swing.JSplitPane;
+import javax.swing.event.ListSelectionEvent;
+import javax.swing.event.ListSelectionListener;
+import org.fife.ui.rtextarea.RTextScrollPane;
 
 import static javax.swing.ScrollPaneConstants.HORIZONTAL_SCROLLBAR_AS_NEEDED;
 import static javax.swing.ScrollPaneConstants.VERTICAL_SCROLLBAR_AS_NEEDED;
@@ -87,8 +91,11 @@ public abstract class CommonSearchDialog extends JFrame {
 	protected ResultsTable resultsTable;
 	protected JLabel resultsInfoLabel;
 	protected JLabel progressInfoLabel;
-	protected JLabel warnLabel;
 	protected ProgressPanel progressPane;
+ 
+	private RSyntaxTextArea codePreviewArea;
+	protected JLabel warnLabel;
+ 
 	private final List<String> searchHistory = new ArrayList<>();
     private final List<String> searchFavorites = new ArrayList<>();
     private static final int MAX_HISTORY = 20;
@@ -343,84 +350,132 @@ public abstract class CommonSearchDialog extends JFrame {
 		buttonPane.add(cancelButton);
 		return buttonPane;
 	}
-	protected JPanel initResultsTable() {
-		ResultsTableCellRenderer renderer = new ResultsTableCellRenderer();
-		resultsModel = new ResultsModel();
-		resultsModel.addTableModelListener(e -> updateProgressLabel(false));
+protected JPanel initResultsTable() {
+        ResultsTableCellRenderer renderer = new ResultsTableCellRenderer();
+        resultsModel = new ResultsModel();
+        resultsModel.addTableModelListener(e -> updateProgressLabel(false));
 
-		resultsTable = new ResultsTable(resultsModel, renderer);
-		resultsTable.setShowHorizontalLines(false);
-		resultsTable.setDragEnabled(false);
-		resultsTable.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
-		resultsTable.setColumnSelectionAllowed(false);
-		resultsTable.setAutoResizeMode(JTable.AUTO_RESIZE_OFF);
-		resultsTable.setAutoscrolls(false);
+        resultsTable = new ResultsTable(resultsModel, renderer);
+        resultsTable.setShowHorizontalLines(false);
+        resultsTable.setDragEnabled(false);
+        resultsTable.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
+        resultsTable.setColumnSelectionAllowed(false);
+        resultsTable.setAutoResizeMode(JTable.AUTO_RESIZE_OFF);
+        resultsTable.setAutoscrolls(false);
 
-		resultsTable.setDefaultRenderer(Object.class, renderer);
-		Enumeration<TableColumn> columns = resultsTable.getColumnModel().getColumns();
-		while (columns.hasMoreElements()) {
-			TableColumn column = columns.nextElement();
-			column.setCellRenderer(renderer);
-		}
+        resultsTable.setDefaultRenderer(Object.class, renderer);
+        Enumeration<TableColumn> columns = resultsTable.getColumnModel().getColumns();
+        while (columns.hasMoreElements()) {
+            TableColumn column = columns.nextElement();
+            column.setCellRenderer(renderer);
+        }
 
-		resultsTable.addMouseListener(new MouseAdapter() {
-			@Override
-			public void mouseClicked(MouseEvent evt) {
-				if (evt.getClickCount() == 2) {
-					openSelectedItem();
-				}
-			}
-		});
-		resultsTable.addKeyListener(new KeyAdapter() {
-			@Override
-			public void keyPressed(KeyEvent e) {
-				if (e.getKeyCode() == KeyEvent.VK_ENTER) {
-					openSelectedItem();
-				}
-			}
-		});
-		// override copy action to copy long string of node column
-		resultsTable.getActionMap().put("copy", new AbstractAction() {
-			@Override
-			public void actionPerformed(ActionEvent e) {
-				JNode selectedNode = getSelectedNode();
-				if (selectedNode != null) {
-					UiUtils.copyToClipboard(selectedNode.makeLongString());
-				}
-			}
-		});
+        resultsTable.addMouseListener(new MouseAdapter() {
+            @Override
+            public void mouseClicked(MouseEvent evt) {
+                if (evt.getClickCount() == 2) {
+                    openSelectedItem();
+                }
+            }
+        });
+        resultsTable.addKeyListener(new KeyAdapter() {
+            @Override
+            public void keyPressed(KeyEvent e) {
+                if (e.getKeyCode() == KeyEvent.VK_ENTER) {
+                    openSelectedItem();
+                }
+            }
+        });
+        
+       
+        resultsTable.getActionMap().put("copy", new AbstractAction() {
+            @Override
+            public void actionPerformed(ActionEvent e) {
+                JNode selectedNode = getSelectedNode();
+                if (selectedNode != null) {
+                    UiUtils.copyToClipboard(selectedNode.makeLongString());
+                }
+            }
+        });
 
-		warnLabel = new JLabel();
-		warnLabel.setForeground(Color.RED);
-		warnLabel.setVisible(false);
+       
+        resultsTable.getSelectionModel().addListSelectionListener(e -> {
+            if (!e.getValueIsAdjusting()) {
+                updateCodePreview(getSelectedNode());
+            }
+        });
 
-		JScrollPane scroll = new JScrollPane(resultsTable, VERTICAL_SCROLLBAR_AS_NEEDED, HORIZONTAL_SCROLLBAR_AS_NEEDED);
+        warnLabel = new JLabel();
+        warnLabel.setForeground(Color.RED);
+        warnLabel.setVisible(false);
 
-		resultsInfoLabel = new JLabel("");
-		resultsInfoLabel.setFont(mainWindow.getSettings().getUiFont());
+      
+        JScrollPane tableScroll = new JScrollPane(resultsTable, VERTICAL_SCROLLBAR_AS_NEEDED, HORIZONTAL_SCROLLBAR_AS_NEEDED);
 
-		progressInfoLabel = new JLabel("");
-		progressInfoLabel.setFont(mainWindow.getSettings().getUiFont());
-		progressInfoLabel.addMouseListener(new MouseAdapter() {
-			@Override
-			public void mouseClicked(MouseEvent e) {
-				mainWindow.showLogViewer(LogOptions.allWithLevel(Level.INFO));
-			}
-		});
+ 
+        codePreviewArea = AbstractCodeArea.getDefaultArea(mainWindow);
+        codePreviewArea.setEditable(false);
+        codePreviewArea.setRows(1);  
+        codePreviewArea.setBorder(BorderFactory.createEmptyBorder(2, 5, 2, 5));
 
-		JPanel resultsActionsPanel = new JPanel();
-		resultsActionsPanel.setLayout(new BoxLayout(resultsActionsPanel, BoxLayout.LINE_AXIS));
-		resultsActionsPanel.setBorder(BorderFactory.createEmptyBorder(10, 0, 10, 0));
-		addResultsActions(resultsActionsPanel);
+        RTextScrollPane previewScroll = new RTextScrollPane(codePreviewArea);
+        previewScroll.setLineNumbersEnabled(false);   
+        previewScroll.setFoldIndicatorEnabled(false);  
+       
+        previewScroll.setPreferredSize(new Dimension(0, codePreviewArea.getFont().getSize() + 15));
 
-		JPanel resultsPanel = new JPanel();
-		resultsPanel.setLayout(new BoxLayout(resultsPanel, BoxLayout.PAGE_AXIS));
-		resultsPanel.add(warnLabel, BorderLayout.PAGE_START);
-		resultsPanel.add(scroll, BorderLayout.CENTER);
-		resultsPanel.add(resultsActionsPanel, BorderLayout.PAGE_END);
-		return resultsPanel;
-	}
+        JSplitPane splitPane = new JSplitPane(JSplitPane.VERTICAL_SPLIT, tableScroll, previewScroll);
+        splitPane.setOneTouchExpandable(false);  
+        splitPane.setResizeWeight(1.0);         
+        splitPane.setDividerSize(2);            
 
+        resultsInfoLabel = new JLabel("");
+        resultsInfoLabel.setFont(mainWindow.getSettings().getUiFont());
+
+        progressInfoLabel = new JLabel("");
+        progressInfoLabel.setFont(mainWindow.getSettings().getUiFont());
+        progressInfoLabel.addMouseListener(new MouseAdapter() {
+            @Override
+            public void mouseClicked(MouseEvent e) {
+                mainWindow.showLogViewer(LogOptions.allWithLevel(Level.INFO));
+            }
+        });
+
+        JPanel resultsActionsPanel = new JPanel();
+        resultsActionsPanel.setLayout(new BoxLayout(resultsActionsPanel, BoxLayout.LINE_AXIS));
+        resultsActionsPanel.setBorder(BorderFactory.createEmptyBorder(10, 0, 10, 0));
+        addResultsActions(resultsActionsPanel);
+
+        JPanel resultsPanel = new JPanel();
+        resultsPanel.setLayout(new BorderLayout());  
+        resultsPanel.add(warnLabel, BorderLayout.PAGE_START);
+        resultsPanel.add(splitPane, BorderLayout.CENTER);
+        resultsPanel.add(resultsActionsPanel, BorderLayout.PAGE_END);
+        return resultsPanel;
+    }
+	private void updateCodePreview(@Nullable JNode node) {
+        if (codePreviewArea == null) {
+            return;
+        }
+        if (node == null || !node.hasDescString()) {
+            codePreviewArea.setText("");
+            return;
+        }
+
+       
+        String content = node.makeDescString();
+      
+        codePreviewArea.setSyntaxEditingStyle(node.getSyntaxName());
+        codePreviewArea.setText(content);
+
+        
+        if (highlightContext != null) {
+            SearchEngine.markAll(codePreviewArea, highlightContext);
+        }
+        
+        
+        codePreviewArea.setCaretPosition(0);
+    }
 	protected void addResultsActions(JPanel resultsActionsPanel) {
 		resultsActionsPanel.add(Box.createRigidArea(new Dimension(20, 0)));
 		resultsActionsPanel.add(resultsInfoLabel);
